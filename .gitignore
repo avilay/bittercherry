@@ -3,5 +3,6 @@ dist/
 .env
 auth_info/
 downloads/
+last_id.txt
 .vscode/
 .ipynb_checkpoints/

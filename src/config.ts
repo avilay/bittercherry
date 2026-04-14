@@ -2,7 +2,7 @@ import "dotenv/config";
 
 export const config = {
   // WhatsApp contact name as it appears in your chat list
-  contactName: process.env.CONTACT_NAME || "Anika Parekh",
+  contactName: process.env.CONTACT_NAME || "",
 
   // Discord webhook URL for error notifications
   discordWebhookUrl: process.env.DISCORD_WEBHOOK_URL || "",
@@ -11,5 +11,5 @@ export const config = {
   downloadDir: "downloads",
 
   // Directory to store browser session
-  authDir: "auth_info",
+  authDir: "auth_info"
 };

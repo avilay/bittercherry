@@ -1,53 +1,59 @@
 import axios from "axios";
-import { writeFile, mkdir, access } from "fs/promises";
+import * as cheerio from "cheerio";
+import { writeFile, readFile, mkdir, access } from "fs/promises";
 import path from "path";
 import { config } from "./config.js";
 
-const BASE_URL = "https://epaper.bombaysamachar.com/media";
+const EPAPER_BASE = "https://epaper.bombaysamachar.com/view";
+const LAST_ID_FILE = "last_id.txt";
 
-/**
- * Build candidate URLs for a given date, trying different page counts
- * and "page" vs "pages" variants.
- */
-function buildCandidateUrls(date: Date): string[] {
-  const dd = String(date.getDate()).padStart(2, "0");
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const yy = String(date.getFullYear()).slice(-2);
-  const yyyy = String(date.getFullYear());
+// Seed value — only used if last_id.txt doesn't exist yet
+const SEED_ID = 2451;
 
-  const folder = `${yyyy}-${mm}`;
-  const dateStr = `${dd}${mm}${yy}`;
-
-  const urls: string[] = [];
-
-  // Try page counts from 8 to 20
-  for (let pages = 8; pages <= 20; pages++) {
-    for (const suffix of ["page", "pages"]) {
-      urls.push(
-        `${BASE_URL}/${folder}/ms_${dateStr}_msmu_01--${pages}-${suffix}-mor-insert.pdf`,
-      );
-    }
+async function readLastId(): Promise<number> {
+  try {
+    const content = await readFile(LAST_ID_FILE, "utf-8");
+    return parseInt(content.trim(), 10);
+  } catch {
+    return SEED_ID;
   }
+}
 
-  return urls;
+async function saveLastId(id: number): Promise<void> {
+  await writeFile(LAST_ID_FILE, String(id));
 }
 
 /**
- * Find the actual PDF URL for the given date by probing candidates with HEAD requests.
+ * Find the PDF download URL by fetching the HTML edition page and
+ * extracting the link from the "btn-pdfdownload" anchor.
+ * Tries IDs starting from the last successful one, incrementing by 2.
  */
 async function findPdfUrl(date: Date): Promise<string> {
-  const candidates = buildCandidateUrls(date);
+  const dd = String(date.getDate()).padStart(2, "0");
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const yyyy = String(date.getFullYear());
+  const dateStr = `${dd}-${mm}-${yyyy}`;
 
-  for (const url of candidates) {
+  const lastId = await readLastId();
+
+  // Try up to 20 IDs forward from last known, stepping by 2
+  for (let id = lastId; id <= lastId + 40; id += 2) {
+    const url = `${EPAPER_BASE}/${id}/${dateStr}`;
     try {
-      await axios.head(url);
-      return url;
+      const response = await axios.get(url, { timeout: 10000 });
+      const $ = cheerio.load(response.data);
+      const pdfHref = $("a.btn-pdfdownload").attr("href");
+      if (pdfHref) {
+        console.log(`Found edition page: ${url}`);
+        await saveLastId(id);
+        return pdfHref;
+      }
     } catch {
-      // 404 or other error — try next candidate
+      // 404 or other error — try next ID
     }
   }
 
-  throw new Error(`No PDF found for ${date.toISOString().slice(0, 10)}`);
+  throw new Error(`No PDF found for ${dateStr}`);
 }
 
 /**
